@@ -39,8 +39,8 @@ import org.apache.pig.impl.logicalLayer.schema.Schema;
  * This loader properly supports double-quoted fields that contain commas and other
  * double-quotes escaped with backslashes.
  * 
- * The following fields are all parsed as one tuple:
- * "the man, he said \"hello\""
+ * The following fields are all parsed as one tuple, per each line
+ * "the man, he said ""hello"""
  * "one,two,three"
  * 
  * This version supports pig 0.3
@@ -50,7 +50,6 @@ public class CSVLoader extends Utf8StorageConverter implements LoadFunc {
     protected BufferedPositionedInputStream in = null;
     protected final Log mLog = LogFactory.getLog(getClass());
     private static final byte DOUBLE_QUOTE = '"';
-    private static final byte QUOTE_ESCAPE = '\\';
     private static final byte FIELD_DEL = ',';
     private static final byte RECORD_DEL = '\n';
     
@@ -90,45 +89,50 @@ public class CSVLoader extends Utf8StorageConverter implements LoadFunc {
 	    return null;
 	}
 	boolean inQuotedField = false;
+	boolean escapedQuoteEmitted = false;
 	int lastChar = -1;
 
 	if (mBuf == null) {
 	    mBuf = new ByteArrayOutputStream(4096);
 	}
 	mBuf.reset();
-	
-	
+	//TODO: redo this in a more elegant way
 	while (true) {
-	    // BufferedPositionedInputStream is buffered, so I don't need
-	    // to buffer.
+
 	    int b = in.read();
-	    if (b == DOUBLE_QUOTE)
+	    if (inQuotedField)
 	    {
-		if (inQuotedField){
-		    if (lastChar != QUOTE_ESCAPE){
-			inQuotedField = false;
-		    }
-		    else
-		    {
-			mBuf.write(b);
-		    }
+		if (b == DOUBLE_QUOTE && lastChar == DOUBLE_QUOTE && !escapedQuoteEmitted)
+		{
+		    mBuf.write(DOUBLE_QUOTE);
+		    lastChar = -1;
+		    escapedQuoteEmitted = true;
+		}
+		else if (b == DOUBLE_QUOTE && lastChar == DOUBLE_QUOTE && escapedQuoteEmitted)
+		{
+		    escapedQuoteEmitted = false;
 		}
 		else
-		{
-		    inQuotedField = true;
+		
+		if (lastChar == DOUBLE_QUOTE && (b == FIELD_DEL || b == RECORD_DEL)){
+		    
+		    inQuotedField = false;
+		    readField();
 		}
-	    } else if (b == FIELD_DEL) {
-		if (inQuotedField)
+		else if ( b == DOUBLE_QUOTE )
 		{
-		    mBuf.write(b); // this is an embedded comma
+		    // do nothing for now - check next go around
 		}
 		else{
-		    readField(); // end of the field
+		    mBuf.write(b);
 		}
-	    } 
-	    else if (inQuotedField && b == QUOTE_ESCAPE)
+	    }
+	    else if (b == DOUBLE_QUOTE)
 	    {
-		//do nothing, will check on next character to see if this goes in the buffer
+		
+		inQuotedField = true;
+	    } else if (b == FIELD_DEL) {
+		readField(); // end of the field
 	    }
 	    else if (b == RECORD_DEL) {
 		readField();
@@ -140,11 +144,9 @@ public class CSVLoader extends Utf8StorageConverter implements LoadFunc {
 		return null;
 	    } 
 	    else {
-		if (inQuotedField && lastChar == QUOTE_ESCAPE){
-		    mBuf.write(lastChar);
-		}
 		mBuf.write(b);
 	    }
+	    
 	    lastChar = b;
 	}
     }
