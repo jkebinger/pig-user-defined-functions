@@ -16,7 +16,7 @@
  *
  */
 
-package com.kebinger.pig.loader;
+package com.kebinger.pig.storage;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
